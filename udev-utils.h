@@ -23,4 +23,7 @@ const char *get_syspath_by_devpath(const char *devpath);
 void invoke_create_handler(struct udev_device *ud);
 size_t syspathlen_wo_units(const char *path);
 
+int ud_sysctlbyname(const char *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
+char *ud_devname_r(dev_t dev, mode_t type, char *buf, int len);
+
 #endif /* UDEV_UTILS_H_ */

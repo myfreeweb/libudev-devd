@@ -108,6 +108,8 @@ struct udev_device *udev_monitor_receive_device(
 const char *udev_device_get_action(struct udev_device *udev_device);
 struct udev *udev_monitor_get_udev(struct udev_monitor *udev_monitor);
 
+void udev_devd_cap_init();
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

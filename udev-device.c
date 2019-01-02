@@ -36,6 +36,9 @@
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #include <sys/stat.h>
+#ifdef HAVE_CASPER
+#include <sys/capsicum.h>
+#endif
 
 #include <stdarg.h>
 #include <stdatomic.h>
@@ -80,10 +83,13 @@ udev_device_new_from_devnum(struct udev *udev, char type, dev_t devnum)
 	size_t buflen;
 
 	dev_len = strlen(devpath);
-	devname_r(devnum, S_IFCHR, devpath + dev_len, sizeof(devpath) - dev_len);
+	ud_devname_r(devnum, S_IFCHR, devpath + dev_len, sizeof(devpath) - dev_len);
 
 	/* Recheck path as devname_r returns zero-terminated garbage on error */
-	if (stat(devpath, &st) != 0 || st.st_rdev != devnum) {
+#ifdef HAVE_CASPER
+	if (!cap_sandboxed())
+#endif
+	if ((stat(devpath, &st) != 0 || st.st_rdev != devnum)) {
 		TRC("(%d) -> failed", (int)devnum);
 		return NULL;
 	}
@@ -100,7 +106,7 @@ udev_device_new_from_devnum(struct udev *udev, char type, dev_t devnum)
 	snprintf(buf, 32, "%.24s.PCI_ID", devbuf);
 	buflen = 32;
 
-	sysctlbyname(buf, devbuf, &buflen, NULL, 0);
+	ud_sysctlbyname(buf, devbuf, &buflen, NULL, 0);
 
 	device = udev_device_new_common(udev, syspath, UD_ACTION_NONE);
 	parent = udev_device_new_common(udev, syspath, UD_ACTION_NONE);

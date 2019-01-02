@@ -43,6 +43,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef HAVE_CASPER
+#include <libcasper.h>
+#include <casper/cap_sysctl.h>
+#endif
+
 #ifdef HAVE_LINUX_INPUT_H
 #include <linux/input.h>
 #else
@@ -60,6 +65,10 @@
 
 #ifdef HAVE_LINUX_INPUT_H
 static const char *virtual_sysname = "uinput";
+#endif
+
+#ifdef HAVE_CASPER
+static cap_channel_t *cap_sysctl_chan = NULL;
 #endif
 
 void create_evdev_handler(struct udev_device *udev_device);
@@ -160,7 +169,7 @@ kernel_has_evdev_enabled()
 	if (enabled != -1)
 		return (enabled);
 
-	if (sysctlbyname("kern.features.evdev_support", &enabled, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname("kern.features.evdev_support", &enabled, &len, NULL, 0) < 0)
 		return (0);
 
 	TRC("() EVDEV enabled: %s", enabled ? "true" : "false");
@@ -334,32 +343,32 @@ create_evdev_handler(struct udev_device *ud)
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.name", unit);
 	len = sizeof(name);
-	if (sysctlbyname(mib, name, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, name, &len, NULL, 0) < 0)
 		goto use_ioctl;
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.phys", unit);
 	len = sizeof(phys);
-	if (sysctlbyname(mib, phys, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, phys, &len, NULL, 0) < 0)
 		goto use_ioctl;
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.id", unit);
 	len = sizeof(id);
-	if (sysctlbyname(mib, &id, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, &id, &len, NULL, 0) < 0)
 		goto use_ioctl;
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.key_bits", unit);
 	len = sizeof(key_bits);
-	if (sysctlbyname(mib, key_bits, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, key_bits, &len, NULL, 0) < 0)
 		goto use_ioctl;
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.rel_bits", unit);
 	len = sizeof(rel_bits);
-	if (sysctlbyname(mib, rel_bits, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, rel_bits, &len, NULL, 0) < 0)
 		goto use_ioctl;
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.abs_bits", unit);
 	len = sizeof(abs_bits);
-	if (sysctlbyname(mib, abs_bits, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, abs_bits, &len, NULL, 0) < 0)
 		goto use_ioctl;
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.sw_bits", unit);
@@ -369,7 +378,7 @@ create_evdev_handler(struct udev_device *ud)
 
 	snprintf(mib, sizeof(mib), "kern.evdev.input.%s.props", unit);
 	len = sizeof(prp_bits);
-	if (sysctlbyname(mib, prp_bits, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, prp_bits, &len, NULL, 0) < 0)
 		goto use_ioctl;
 
 	goto found_values;
@@ -514,18 +523,18 @@ set_parent(struct udev_device *ud)
 
 	snprintf(mib, sizeof(mib), "dev.%.17s.%.3s.%%desc", devname, unit);
 	len = sizeof(name);
-	if (sysctlbyname(mib, name, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, name, &len, NULL, 0) < 0)
 		return;
 	*(strchrnul(name, ',')) = '\0';	/* strip name */
 
 	snprintf(mib, sizeof(mib), "dev.%.14s.%.3s.%%pnpinfo", devname, unit);
 	len = sizeof(pnpinfo);
-	if (sysctlbyname(mib, pnpinfo, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, pnpinfo, &len, NULL, 0) < 0)
 		return;
 
 	snprintf(mib, sizeof(mib), "dev.%.15s.%.3s.%%parent", devname, unit);
 	len = sizeof(parentname);
-	if (sysctlbyname(mib, parentname, &len, NULL, 0) < 0)
+	if (ud_sysctlbyname(mib, parentname, &len, NULL, 0) < 0)
 		return;
 
 	vendorstr = get_kern_prop_value(pnpinfo, "vendor", &vendorlen);
@@ -642,4 +651,47 @@ create_drm_handler(struct udev_device *ud)
 {
 	udev_list_insert(udev_device_get_properties_list(ud), "HOTPLUG", "1");
 	set_parent(ud);
+}
+
+LIBUDEV_EXPORT void
+udev_devd_cap_init()
+{
+#ifdef HAVE_CASPER
+	cap_channel_t *cap_casper;
+
+	cap_casper = cap_init();
+	if (!cap_casper)
+	    TRC("could not open casper");
+
+	cap_sysctl_chan = cap_service_open(cap_casper, "system.sysctl");
+	if (!cap_sysctl_chan)
+	    TRC("could not open sysctl casper service");
+
+	cap_close(cap_casper);
+#endif
+}
+
+int
+ud_sysctlbyname(const char *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen)
+{
+#ifdef HAVE_CASPER
+	if (cap_sysctl_chan)
+		return cap_sysctlbyname(cap_sysctl_chan, name, oldp, oldlenp, newp, newlen);
+#endif
+
+	return sysctlbyname(name, oldp, oldlenp, newp, newlen);
+}
+
+char *
+ud_devname_r(dev_t dev, mode_t type, char *buf, int len)
+{
+#ifdef HAVE_CASPER
+	if (cap_sysctl_chan) {
+		size_t j = len;
+		if (cap_sysctlbyname(cap_sysctl_chan, "kern.devname", buf, &j, &dev, sizeof(dev)) == 0)
+			return buf;
+	}
+#endif
+
+	return devname_r(dev, type, buf, len);
 }

@@ -56,6 +56,13 @@ if cc.has_function('strchrnul')
 	config_h.set('HAVE_STRCHRNUL', '1')
 endif
 
+if cc.has_header('casper/cap_sysctl.h')
+	casper_dep = cc.find_library('casper')
+	cap_sysctl_dep = cc.find_library('cap_sysctl')
+	config_h.set('HAVE_CASPER', '1')
+endif
+
+
 libudevdevd_so_version = '0.0.0'
 # Dependencies
 thread_dep = dependency('threads')
@@ -81,7 +88,9 @@ src_libudevdevd = [ 'udev.c',
 deps_libudevdevd = [
 	thread_dep,
 	devinfo_dep,
-	procstat_dep
+	procstat_dep,
+	casper_dep,
+	cap_sysctl_dep
 ]
 
 lib_libudevdevd = shared_library('udev',
